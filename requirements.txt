@@ -1,4 +1,10 @@
 langgraph
 langchain-google-genai
+langchain-openai
+langchain-community
 python-dotenv
 requests
+fastapi
+uvicorn
+langchain-anthropic
+langchain-groq
