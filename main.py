@@ -42,7 +42,10 @@ def get_weather(location: str):
 
 # --- 3. Node Logic: Classifier/LLM ---
 # LLM'e tool bind ediliyor.
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+llm = ChatGoogleGenerativeAI(
+    model="models/gemini-2.5-flash",
+    google_api_key=os.getenv("GOOGLE_API_KEY")
+)
 tools = [get_weather]
 llm_with_tools = llm.bind_tools(tools)
 
