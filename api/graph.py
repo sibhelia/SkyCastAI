@@ -34,7 +34,7 @@ def get_weather(location: str):
         wind_speed = round(data['wind']['speed'] * 3.6, 1) # m/s to km/h
         desc = data['weather'][0]['description']
         
-        return {
+        result = {
             "location": location,
             "temp": f"{temp}°C",
             "humidity": f"%{humidity}",
@@ -43,6 +43,9 @@ def get_weather(location: str):
             "description": desc,
             "raw_text": f"{location} konumunda hava {temp}°C ve {desc}. Nem: %{humidity}, Rüzgar: {wind_speed} km/sa."
         }
+        # LangChain ToolMessage string içerik gerektirir
+        import json
+        return json.dumps(result, ensure_ascii=False)
     else:
         return f"Hata: {location} için hava durumu bilgisi çekilemedi."
 
@@ -63,21 +66,37 @@ def get_llm(provider: str):
         from langchain_groq import ChatGroq
         return ChatGroq(model_name="llama3-8b-8192", temperature=0.7)
     elif provider == "ollama-llama3.2":
-        from langchain_community.chat_models import ChatOllama
+        from langchain_ollama import ChatOllama
         return ChatOllama(model="llama3.2", temperature=0.7)
     elif provider == "ollama-mistral":
-        from langchain_community.chat_models import ChatOllama
+        from langchain_ollama import ChatOllama
         return ChatOllama(model="mistral", temperature=0.7)
     elif provider == "ollama-phi3":
-        from langchain_community.chat_models import ChatOllama
+        from langchain_ollama import ChatOllama
         return ChatOllama(model="phi3", temperature=0.7)
     else: # default to gemini
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(
-            model="models/gemini-2.5-flash",
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
-            temperature=0.7
-        )
+        # gemini-2.0-flash-lite: Free tier'da çok daha yüksek quota
+        # gemini-2.0-flash quota bitince fallback olarak kullanılır
+        gemini_models = [
+            "gemini-2.0-flash-lite",
+            "gemini-2.0-flash",
+            "gemini-flash-latest",
+        ]
+        last_error = None
+        for model_name in gemini_models:
+            try:
+                llm = ChatGoogleGenerativeAI(
+                    model=model_name,
+                    google_api_key=os.getenv("GOOGLE_API_KEY"),
+                    temperature=0.7
+                )
+                # Bağlantıyı test etmeden döndür — invoke sırasında hata çıkarsa bir sonraki dene
+                return llm
+            except Exception as e:
+                last_error = e
+                continue
+        raise last_error
 
 # --- 4. Node Logic ---
 from langchain_core.messages import SystemMessage
@@ -85,15 +104,39 @@ from langchain_core.messages import SystemMessage
 def create_graph(provider: str = "gemini"):
     # Create the LLM bound with tools
     llm = get_llm(provider)
-    llm_with_tools = llm.bind_tools(tools)
     
     def classifier_node(state: State):
-        # Akıllı asistanın çalışma stili (Mobil App asistanı, TV Spikeri DEĞİL)
         sys_msg = SystemMessage(content="Sen gelişmiş bir mobil hava durumu uygulamasının akıllı asistanısın. TV sunucusu veya spiker gibi 'sayın seyirciler' gibi hitaplar kullanma. Ancak sadece sıkıcı veriler de verme. Hava durumunu (rüzgar, nem dahil) doğal, okunması keyifli bir dille açıkla ve gerekirse pratik uyarılarda bulun (kalın giyin, şemsiye al, güneş gözlüğü tak). Kısa ve net ol.")
         messages_with_sys = [sys_msg] + state["messages"]
         
-        msg = llm_with_tools.invoke(messages_with_sys)
-        return {"messages": [msg]}
+        # Gemini free-tier quota hatalarına karşı fallback modelleri
+        if provider == "gemini":
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            fallback_models = ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-flash-latest"]
+            last_err = None
+            for model_name in fallback_models:
+                try:
+                    current_llm = ChatGoogleGenerativeAI(
+                        model=model_name,
+                        google_api_key=os.getenv("GOOGLE_API_KEY"),
+                        temperature=0.7
+                    )
+                    llm_with_tools = current_llm.bind_tools(tools)
+                    msg = llm_with_tools.invoke(messages_with_sys)
+                    print(f"[OK] Model: {model_name}")
+                    return {"messages": [msg]}
+                except Exception as e:
+                    err_str = str(e).lower()
+                    if "quota" in err_str or "resource_exhausted" in err_str or "429" in err_str:
+                        print(f"[QUOTA] {model_name} quota doldu, sonraki deneniyor...")
+                        last_err = e
+                        continue
+                    raise e  # Quota dışı hata ise yeniden fırlat
+            raise last_err
+        else:
+            llm_with_tools = llm.bind_tools(tools)
+            msg = llm_with_tools.invoke(messages_with_sys)
+            return {"messages": [msg]}
 
     workflow = StateGraph(State)
     

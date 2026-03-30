@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from api.graph import create_graph, State
 from api.utils import get_city_image
@@ -54,15 +57,12 @@ async def chat_endpoint(request: ChatRequest):
             if isinstance(m, ToolMessage):
                 import json
                 try:
-                    # Tool response is a string, but it might be a stringified dict or a real dict representation
                     content = m.content
-                    if content.startswith("{") and content.endswith("}"):
-                         # It's a stringified dict from the tool
-                         import ast
-                         weather_data = ast.literal_eval(content)
+                    if isinstance(content, str) and content.strip().startswith("{"):
+                        weather_data = json.loads(content)
                     break
-                except:
-                    pass
+                except Exception:
+                    break
 
         # Şehir ismi bulma
         image_url = None
