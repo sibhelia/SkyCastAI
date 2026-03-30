@@ -59,12 +59,19 @@ def get_llm(provider: str):
     elif provider == "openai-gpt4o":
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(model="gpt-4o", temperature=0.7)
+    elif provider == "openai-gpt4o-mini":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
     elif provider == "anthropic-claude3":
         from langchain_anthropic import ChatAnthropic
         return ChatAnthropic(model_name="claude-3-haiku-20240307", temperature=0.7)
     elif provider == "groq-llama3":
         from langchain_groq import ChatGroq
-        return ChatGroq(model_name="llama3-8b-8192", temperature=0.7)
+        # Groq Llama3 70B çok yetenekli ve genelde free tier'da erişilebilir (rate limitlere dikkat)
+        return ChatGroq(model_name="llama3-70b-8192", temperature=0.7)
+    elif provider == "groq-mixtral":
+        from langchain_groq import ChatGroq
+        return ChatGroq(model_name="mixtral-8x7b-32768", temperature=0.7)
     elif provider == "ollama-llama3.2":
         from langchain_ollama import ChatOllama
         return ChatOllama(model="llama3.2", temperature=0.7)
@@ -74,7 +81,10 @@ def get_llm(provider: str):
     elif provider == "ollama-phi3":
         from langchain_ollama import ChatOllama
         return ChatOllama(model="phi3", temperature=0.7)
-    else: # default to gemini
+    elif provider == "gemini-lite":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", google_api_key=os.getenv("GOOGLE_API_KEY"), temperature=0.7)
+    else: # default to gemini flash
         from langchain_google_genai import ChatGoogleGenerativeAI
         # gemini-2.0-flash-lite: Free tier'da çok daha yüksek quota
         # gemini-2.0-flash quota bitince fallback olarak kullanılır
@@ -106,7 +116,16 @@ def create_graph(provider: str = "gemini"):
     llm = get_llm(provider)
     
     def classifier_node(state: State):
-        sys_msg = SystemMessage(content="Sen gelişmiş bir mobil hava durumu uygulamasının akıllı asistanısın. TV sunucusu veya spiker gibi 'sayın seyirciler' gibi hitaplar kullanma. Ancak sadece sıkıcı veriler de verme. Hava durumunu (rüzgar, nem dahil) doğal, okunması keyifli bir dille açıkla ve gerekirse pratik uyarılarda bulun (kalın giyin, şemsiye al, güneş gözlüğü tak). Kısa ve net ol.")
+        sys_msg = SystemMessage(content="""Sen gelişmiş bir mobil hava durumu uygulamasının akıllı ve dost canlısı asistanısın. 
+
+KRİTİK KURAL: 
+Ekran SABİTTİR ve SCROLL (kaydırma) yoktur. Bu yüzden cevabın ÇOK KISA (maksimum 2-3 kısa cümle) olmalı.
+
+İÇERİK:
+1. Hava durumunu (sıcaklık, rüzgar vb.) doğal bir dille söyle. 
+2. Mutlaka 1 tane pratik tavsiye ver (Örn: 'Şemsiye al', 'Güneş kremi sür').
+3. Şehir ismini vurgula (Örn: 'Balıkesir'de hava...').
+4. Gereksiz hiçbir kelime kullanma.""")
         messages_with_sys = [sys_msg] + state["messages"]
         
         # Gemini free-tier quota hatalarına karşı fallback modelleri

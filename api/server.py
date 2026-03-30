@@ -51,26 +51,35 @@ async def chat_endpoint(request: ChatRequest):
         last_msg = final_state["messages"][-1]
         
         # Ek verileri ayıkla (eğer get_weather çalıştıysa)
-        # LangGraph'ta alet yanıtları ToolMessage olarak saklanır.
         weather_data = None
+        tool_location = None
+        
         for m in reversed(final_state["messages"]):
             if isinstance(m, ToolMessage):
                 import json
                 try:
                     content = m.content
+                    # ToolMessage string olarak JSON döner
                     if isinstance(content, str) and content.strip().startswith("{"):
                         weather_data = json.loads(content)
+                        tool_location = weather_data.get("location")
                     break
                 except Exception:
                     break
 
-        # Şehir ismi bulma
+        # Şehir ismi ve Resim URL bulma
+        # Öncelik tool'dan gelen kesin lokasyonda
         image_url = None
-        possible_cities = [word.capitalize() for word in request.message.split() if len(word) > 3]
-        if possible_cities:
-            image_url = get_city_image(possible_cities[0])
-        elif weather_data and "location" in weather_data:
-            image_url = get_city_image(weather_data["location"])
+        search_city = tool_location
+        
+        # Eğer tool çalışmadıysa (selamlaşma vb), mesajdan bulmaya çalış
+        if not search_city:
+            possible_cities = [word.capitalize() for word in request.message.split() if len(word) > 3]
+            if possible_cities:
+                search_city = possible_cities[0]
+
+        if search_city:
+            image_url = get_city_image(search_city)
 
         return {
             "response": last_msg.content,
