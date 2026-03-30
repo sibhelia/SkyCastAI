@@ -35,11 +35,13 @@ const { width } = Dimensions.get('window');
 // Backend IP ve Localhost Ayarı (Hem Web hem Telefon için)
 const BACKEND_URL = Platform.OS === 'web' ? 'http://localhost:8000' : 'http://192.168.5.21:8000';
 
-const cloudProviders = [
-  { id: 'gemini', name: 'Google Gemini 1.5' }
-];
-
-const localProviders = [
+const providersList = [
+  { id: 'gemini-lite', name: 'Gemini 2.0 Flash Lite' },
+  { id: 'gemini', name: 'Gemini 1.5 Flash' },
+  { id: 'anthropic-claude3', name: 'Claude 3 Haiku' },
+  { id: 'openai-gpt4o-mini', name: 'GPT-4o Mini' },
+  { id: 'groq-llama3', name: 'Llama 3 (Groq)' },
+  { id: 'groq-mixtral', name: 'Mixtral 8x7b' },
   { id: 'ollama-llama3.2', name: 'Ollama Llama 3.2' },
   { id: 'ollama-mistral', name: 'Ollama Mistral' },
   { id: 'ollama-phi3', name: 'Ollama Phi-3' }
@@ -66,6 +68,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [bgImage, setBgImage] = useState('https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1000&q=80');
   const [weatherDetails, setWeatherDetails] = useState(null);
+  const [displayLocation, setDisplayLocation] = useState('');
   const [assistantMessage, setAssistantMessage] = useState("Merhaba! Hangi şehrin hava durumunu öğrenmek istiyorsun?");
   const [showProviders, setShowProviders] = useState(false);
 
@@ -93,6 +96,13 @@ export default function App() {
       if (data.image_url) setBgImage(data.image_url);
       setAssistantMessage(data.response);
       setWeatherDetails(data.weather_details);
+      
+      // Konum bilgisini güncelle
+      if (data.weather_details?.location) {
+        setDisplayLocation(data.weather_details.location);
+      } else if (userQuery.length > 2) {
+        setDisplayLocation(userQuery.charAt(0).toUpperCase() + userQuery.slice(1));
+      }
 
     } catch (error) {
       console.error("Chat error:", error);
@@ -102,7 +112,7 @@ export default function App() {
     }
   };
 
-  const allProviders = [...cloudProviders, ...localProviders];
+  const allProviders = providersList;
   const selectedProviderName = allProviders.find(p => p.id === provider)?.name;
 
   return (
@@ -124,7 +134,7 @@ export default function App() {
             <View style={styles.locationContainer}>
               <MapPin size={20} color="#f87171" style={styles.shadow} />
               <Text style={styles.locationText}>
-                {weatherDetails?.location || "Konum Bekleniyor..."}
+                {displayLocation || "Konum Bekleniyor..."}
               </Text>
             </View>
           </View>
@@ -180,21 +190,32 @@ export default function App() {
             </BlurView>
           </ScrollView>
 
-          {/* Provider Selector Popover */}
+          {/* Provider Selector Popover (VS Code Theme) */}
           {showProviders && (
-            <BlurView intensity={100} tint="dark" style={styles.providerPopover}>
+            <View style={styles.providerPopover}>
               <ScrollView 
                 showsVerticalScrollIndicator={false} 
                 style={{ width: '100%' }}
-                contentContainerStyle={{ alignItems: 'flex-start', width: '100%' }}
+                contentContainerStyle={{ padding: 8 }}
               >
-                {allProviders.map(p => (
-                  <TouchableOpacity key={p.id} onPress={() => {setProvider(p.id); setShowProviders(false);}} style={styles.popoverItem}>
-                    <Text style={[styles.popoverText, provider === p.id && styles.activeText]}>{p.name}</Text>
-                  </TouchableOpacity>
-                ))}
+                {allProviders.map(p => {
+                  const isActive = provider === p.id;
+                  return (
+                    <TouchableOpacity 
+                      key={p.id} 
+                      onPress={() => {setProvider(p.id); setShowProviders(false);}} 
+                      style={[styles.popoverItem, isActive && styles.popoverItemActive]}
+                    >
+                      <View style={styles.popoverItemRow}>
+                        <Text style={[styles.popoverText, isActive && styles.activeText]}>
+                          {p.name}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
-            </BlurView>
+            </View>
           )}
 
           {/* Custom Input Bar (Sizin görseldeki gibi) */}
@@ -410,45 +431,60 @@ const styles = StyleSheet.create({
   providerPopover: {
     position: 'absolute',
     bottom: 95,
-    right: 20,
-    width: 200,
-    maxHeight: 260,
-    borderRadius: 24,
-    overflow: 'hidden',
-    paddingVertical: 10,
+    left: 20, // Sola yaslandı
+    width: 280,
+    maxHeight: 350,
+    backgroundColor: '#1e1e1e', // VS Code arka planı gibi
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: '#333333',
     zIndex: 1000,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.8,
     shadowRadius: 20,
-    elevation: 10,
-  },
-  popoverHeader: {
-    color: '#64748b',
-    fontSize: 12,
-    fontWeight: '800',
-    marginVertical: 10,
-    textTransform: 'uppercase',
+    elevation: 15,
   },
   popoverItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-    alignItems: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginBottom: 4,
     width: '100%',
-    alignSelf: 'stretch',
+  },
+  popoverItemActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: '#007ACC', // VS Code mavi seçim sınırı (görseldeki gibi)
+  },
+  popoverItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
   },
   popoverText: {
-    color: '#cbd5e1',
+    color: '#cccccc',
     fontSize: 14,
-    textAlign: 'left',
+    fontWeight: '600',
+    marginRight: 8,
   },
   activeText: {
-    color: '#38bdf8',
-    fontWeight: 'bold',
+    color: '#ffffff', // Seçiliyken daha beyaz
+  },
+  badgePill: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginRight: 6,
+  },
+  badgeText: {
+    color: '#a3a3a3',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  warningIcon: {
+    fontSize: 12,
   },
   backdrop: {
     position: 'absolute',
