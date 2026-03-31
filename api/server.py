@@ -45,7 +45,10 @@ async def chat_endpoint(request: ChatRequest):
         messages.append(HumanMessage(content=request.message))
         
         # Graph'ı çalıştır
-        final_state = graph.invoke({"messages": messages})
+        final_state = graph.invoke({
+            "messages": messages,
+            "provider": request.provider
+        })
         
         # Son mesajı al
         last_msg = final_state["messages"][-1]

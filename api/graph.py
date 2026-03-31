@@ -2,18 +2,20 @@ import os
 from typing import Annotated, TypedDict, List
 from dotenv import load_dotenv
 
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 import requests
+import json
 
 load_dotenv()
 
 # --- 1. State Definition ---
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
+    provider: str  # Hangi provider'ın kullanıldığı bilgisi
 
 # --- 2. Tool Tanımı ---
 @tool
@@ -43,8 +45,6 @@ def get_weather(location: str):
             "description": desc,
             "raw_text": f"{location} konumunda hava {temp}°C ve {desc}. Nem: %{humidity}, Rüzgar: {wind_speed} km/sa."
         }
-        # LangChain ToolMessage string içerik gerektirir
-        import json
         return json.dumps(result, ensure_ascii=False)
     else:
         return f"Hata: {location} için hava durumu bilgisi çekilemedi."
@@ -53,116 +53,71 @@ tools = [get_weather]
 
 # --- 3. Dynamic LLM Factory ---
 def get_llm(provider: str):
-    if provider == "openai-gpt3.5":
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
-    elif provider == "openai-gpt4o":
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model="gpt-4o", temperature=0.7)
-    elif provider == "openai-gpt4o-mini":
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
-    elif provider == "anthropic-claude3":
-        from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(model_name="claude-3-haiku-20240307", temperature=0.7)
-    elif provider == "groq-llama3":
-        from langchain_groq import ChatGroq
-        # Groq Llama3 70B çok yetenekli ve genelde free tier'da erişilebilir (rate limitlere dikkat)
-        return ChatGroq(model_name="llama3-70b-8192", temperature=0.7)
-    elif provider == "groq-mixtral":
-        from langchain_groq import ChatGroq
-        return ChatGroq(model_name="mixtral-8x7b-32768", temperature=0.7)
-    elif provider == "ollama-llama3.2":
-        from langchain_ollama import ChatOllama
-        return ChatOllama(model="llama3.2", temperature=0.7)
-    elif provider == "ollama-mistral":
-        from langchain_ollama import ChatOllama
-        return ChatOllama(model="mistral", temperature=0.7)
-    elif provider == "ollama-phi3":
-        from langchain_ollama import ChatOllama
-        return ChatOllama(model="phi3", temperature=0.7)
-    elif provider == "gemini-lite":
+    """
+    Seçilen provider'a göre LLM objesini döner.
+    Bazı provider'lar (Gemini gibi) kota hataları için bir liste (fallback) dönebilir.
+    """
+    if provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", google_api_key=os.getenv("GOOGLE_API_KEY"), temperature=0.7)
-    else: # default to gemini flash
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        # gemini-2.0-flash-lite: Free tier'da çok daha yüksek quota
-        # gemini-2.0-flash quota bitince fallback olarak kullanılır
-        gemini_models = [
-            "gemini-2.0-flash-lite",
-            "gemini-2.0-flash",
-            "gemini-flash-latest",
+        # Gemini 2.0 Flash Lite -> Gemini 1.5 FlashFallback silsilesi
+        return [
+            ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0.7),
+            ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7),
+            ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0.7),
         ]
-        last_error = None
-        for model_name in gemini_models:
-            try:
-                llm = ChatGoogleGenerativeAI(
-                    model=model_name,
-                    google_api_key=os.getenv("GOOGLE_API_KEY"),
-                    temperature=0.7
-                )
-                # Bağlantıyı test etmeden döndür — invoke sırasında hata çıkarsa bir sonraki dene
-                return llm
-            except Exception as e:
-                last_error = e
-                continue
-        raise last_error
+    
+    # Şimdilik Gemini ile başladık, diğerleri boş
+    return None
 
 # --- 4. Node Logic ---
-from langchain_core.messages import SystemMessage
-
-def create_graph(provider: str = "gemini"):
-    # Create the LLM bound with tools
-    llm = get_llm(provider)
+def agent_node(state: State):
+    """
+    Modeli çağırıp yanıtı state'e ekleyen ana düğüm.
+    """
+    provider = state.get("provider", "gemini")
+    messages = state["messages"]
     
-    def classifier_node(state: State):
-        sys_msg = SystemMessage(content="""Sen gelişmiş bir mobil hava durumu uygulamasının akıllı ve dost canlısı asistanısın. 
+    # Sistem talimatı (Kısa cevap kuralı burada sabit)
+    sys_msg = SystemMessage(content="""Sen gelişmiş bir mobil hava durumu uygulamasının asistanısın. 
+    1. Cevabın ÇOK KISA (maks 2-3 cümle) olmalı.
+    2. Mutlaka 1 pratik tavsiye ver.
+    3. Gereksiz kelime kullanma.""")
+    
+    all_messages = [sys_msg] + messages
+    
+    # 1. Gemini İşleme (Fallback Mantığı ile)
+    if provider == "gemini":
+        llms = get_llm("gemini")
+        last_error = None
+        for llm in llms:
+            try:
+                llm_with_tools = llm.bind_tools(tools)
+                msg = llm_with_tools.invoke(all_messages)
+                print(f"[Graph Log] {llm.model} başarıyla yanıt verdi.")
+                return {"messages": [msg]}
+            except Exception as e:
+                err_str = str(e).lower()
+                if any(x in err_str for x in ["quota", "429", "resource_exhausted"]):
+                    print(f"[Graph Log] {llm.model} kota doldu, sonraki deneniyor...")
+                    last_error = e
+                    continue
+                raise e
+        raise last_error
 
-KRİTİK KURAL: 
-Ekran SABİTTİR ve SCROLL (kaydırma) yoktur. Bu yüzden cevabın ÇOK KISA (maksimum 2-3 kısa cümle) olmalı.
+    # Diğer provider'lar henüz 'grafa dahil değil' :)
+    # Bu adımı bitirdikten sonra sıradakini buraya ekleyeceğiz.
+    print(f"[Graph Log] Hata: '{provider}' henüz yapılandırılmadı.")
+    return {"messages": [HumanMessage(content="Üzgünüm, bu model henüz hazır değil.")]}
 
-İÇERİK:
-1. Hava durumunu (sıcaklık, rüzgar vb.) doğal bir dille söyle. 
-2. Mutlaka 1 tane pratik tavsiye ver (Örn: 'Şemsiye al', 'Güneş kremi sür').
-3. Şehir ismini vurgula (Örn: 'Balıkesir'de hava...').
-4. Gereksiz hiçbir kelime kullanma.""")
-        messages_with_sys = [sys_msg] + state["messages"]
-        
-        # Gemini free-tier quota hatalarına karşı fallback modelleri
-        if provider == "gemini":
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            fallback_models = ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-flash-latest"]
-            last_err = None
-            for model_name in fallback_models:
-                try:
-                    current_llm = ChatGoogleGenerativeAI(
-                        model=model_name,
-                        google_api_key=os.getenv("GOOGLE_API_KEY"),
-                        temperature=0.7
-                    )
-                    llm_with_tools = current_llm.bind_tools(tools)
-                    msg = llm_with_tools.invoke(messages_with_sys)
-                    print(f"[OK] Model: {model_name}")
-                    return {"messages": [msg]}
-                except Exception as e:
-                    err_str = str(e).lower()
-                    if "quota" in err_str or "resource_exhausted" in err_str or "429" in err_str:
-                        print(f"[QUOTA] {model_name} quota doldu, sonraki deneniyor...")
-                        last_err = e
-                        continue
-                    raise e  # Quota dışı hata ise yeniden fırlat
-            raise last_err
-        else:
-            llm_with_tools = llm.bind_tools(tools)
-            msg = llm_with_tools.invoke(messages_with_sys)
-            return {"messages": [msg]}
-
+# --- 5. Graph Definition ---
+def create_graph(provider: str = "gemini"):
     workflow = StateGraph(State)
     
-    workflow.add_node("agent", classifier_node)
+    # Düğümleri ekle
+    workflow.add_node("agent", agent_node)
     workflow.add_node("tools", ToolNode(tools))
-
     
+    # Akışı tanımla
     workflow.set_entry_point("agent")
     workflow.add_conditional_edges("agent", tools_condition)
     workflow.add_edge("tools", "agent")
