@@ -14,15 +14,16 @@ import {
 import AppSplash from './SplashScreen';
 
 const { width } = Dimensions.get('window');
-const BACKEND_URL = Platform.OS === 'web' 
-  ? (global.window && window.location.hostname !== 'localhost' ? '' : 'http://localhost:8000') 
+const BACKEND_URL = Platform.OS === 'web'
+  ? (global.window && window.location.hostname !== 'localhost' ? '' : 'http://localhost:8000')
   : 'http://192.168.4.209:8000';
 
 const PROVIDERS = [
-  { id: 'groq-llama3', name: 'Groq Llama 3' },
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
-  { id: 'ollama-llama3.2', name: 'Ollama Llama 3.2' },
-  { id: 'ollama-deepseek-r1:1.5b', name: 'Ollama DeepSeek' },
+  { id: 'groq-llama3', name: 'GROQ LLAMA 3.3 70B (HIZLI)' },
+  { id: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', name: 'OR NEMOTRON 120B' },
+  { id: 'openrouter/openrouter/auto', name: 'OR AUTO ROUTER' },
+  { id: 'ollama-llama3.2', name: 'OLLAMA LLAMA 3.2 (YEREL)' },
+  { id: 'ollama-deepseek-r1:1.5b', name: 'OLLAMA DEEPSEEK-R1 (YEREL)' },
 ];
 
 // İlk harf büyük yap
@@ -32,10 +33,10 @@ const capitalize = (str) => str
 
 // advice_type → renk teması
 const ADVICE_THEME = {
-  danger:  { border: '#ef4444', bg: 'rgba(239,68,68,0.12)',   label: '#ef4444', badge: 'TEHLİKELİ', icon: AlertTriangle },
-  warning: { border: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  label: '#f59e0b', badge: 'DİKKAT',    icon: AlertCircle },
-  neutral: { border: '#94a3b8', bg: 'rgba(148,163,184,0.10)', label: '#94a3b8', badge: 'NORMAL',    icon: Info },
-  good:    { border: '#22c55e', bg: 'rgba(34,197,94,0.12)',   label: '#22c55e', badge: 'İDEAL',     icon: CheckCircle2 },
+  danger: { border: '#ef4444', bg: 'rgba(239,68,68,0.12)', label: '#ef4444', badge: 'TEHLİKELİ', icon: AlertTriangle },
+  warning: { border: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: '#f59e0b', badge: 'DİKKAT', icon: AlertCircle },
+  neutral: { border: '#94a3b8', bg: 'rgba(148,163,184,0.10)', label: '#94a3b8', badge: 'NORMAL', icon: Info },
+  good: { border: '#22c55e', bg: 'rgba(34,197,94,0.12)', label: '#22c55e', badge: 'İDEAL', icon: CheckCircle2 },
 };
 
 // Hava durumu açıklamasına göre büyük ikon
@@ -62,18 +63,18 @@ function parseAIResponse(rawText) {
     try {
       const parsed = JSON.parse(jsonMatch[0]);
       return {
-        summary:    parsed.summary     || rawText,
+        summary: parsed.summary || rawText,
         adviceType: parsed.advice_type || 'neutral',
-        iconQuery:  parsed.icon_query  || null,
+        iconQuery: parsed.icon_query || null,
       };
     } catch (_) { /* düz metne düş */ }
   }
 
   const imgMatch = rawText.match(/\[IMG_QUERY:\s*(.*?)\]/);
   return {
-    summary:    rawText.replace(/\[IMG_QUERY:.*?\]/, '').trim(),
+    summary: rawText.replace(/\[IMG_QUERY:.*?\]/, '').trim(),
     adviceType: 'neutral',
-    iconQuery:  imgMatch ? imgMatch[1] : null,
+    iconQuery: imgMatch ? imgMatch[1] : null,
   };
 }
 
@@ -119,15 +120,15 @@ export default function App() {
   const [splashDone, setSplashDone] = useState(false);
 
   // ── Ana ekran state ──────────────────────────────────────────────────────
-  const [input,            setInput]            = useState('');
-  const [provider,         setProvider]         = useState('ollama-llama3.2');
-  const [loading,          setLoading]          = useState(false);
-  const [bgImage,          setBgImage]          = useState('https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1000&q=80');
-  const [weatherDetails,   setWeatherDetails]   = useState(null);
-  const [displayLocation,  setDisplayLocation]  = useState('');
+  const [input, setInput] = useState('');
+  const [provider, setProvider] = useState('groq-llama3');
+  const [loading, setLoading] = useState(false);
+  const [bgImage, setBgImage] = useState('https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1000&q=80');
+  const [weatherDetails, setWeatherDetails] = useState(null);
+  const [displayLocation, setDisplayLocation] = useState('');
   const [assistantMessage, setAssistantMessage] = useState('Merhaba! Hangi şehrin hava durumunu öğrenmek istiyorsun?');
-  const [adviceType,       setAdviceType]       = useState('neutral');
-  const [showProviders,    setShowProviders]    = useState(false);
+  const [adviceType, setAdviceType] = useState('neutral');
+  const [showProviders, setShowProviders] = useState(false);
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -139,7 +140,7 @@ export default function App() {
 
     try {
       const response = await fetch(`${BACKEND_URL}/chat`, {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userQuery, provider, history: [] }),
       });
@@ -170,185 +171,186 @@ export default function App() {
     }
   };
 
-  const theme        = ADVICE_THEME[adviceType] || ADVICE_THEME.neutral;
-  const AdviceIcon   = theme.icon;
-  const selectedName = PROVIDERS.find(p => p.id === provider)?.name;
+  const theme = ADVICE_THEME[adviceType] || ADVICE_THEME.neutral;
+  const AdviceIcon = theme.icon;
+  const selectedName = PROVIDERS.find(p => p.id === provider)?.name ||
+    provider.split('/').pop().replace('ollama-', '').replace(':free', '').toUpperCase();
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
       <SafeAreaView style={styles.container}>
 
-      {/* ── Ana Ekran (splash solar solmaz görünür) ─────────────────────── */}
-      <ImageBackground
-        source={{ uri: bgImage }}
-        style={[styles.fullBg, !splashDone && { opacity: 0 }]}
-        blurRadius={2}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.content}
+        {/* ── Ana Ekran (splash solar solmaz görünür) ─────────────────────── */}
+        <ImageBackground
+          source={{ uri: bgImage }}
+          style={[styles.fullBg, !splashDone && { opacity: 0 }]}
+          blurRadius={2}
         >
-          {showProviders && (
-            <TouchableOpacity
-              activeOpacity={1}
-              style={styles.backdrop}
-              onPress={() => setShowProviders(false)}
-            />
-          )}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.content}
+          >
+            {showProviders && (
+              <TouchableOpacity
+                activeOpacity={1}
+                style={styles.backdrop}
+                onPress={() => setShowProviders(false)}
+              />
+            )}
 
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.locationRow}>
-              <MapPin size={18} color="#f87171" />
-              <Text style={styles.locationText}>
-                {displayLocation || 'Konum Bekleniyor...'}
-              </Text>
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={styles.locationRow}>
+                <MapPin size={18} color="#f87171" />
+                <Text style={styles.locationText}>
+                  {displayLocation || 'Konum Bekleniyor...'}
+                </Text>
+              </View>
             </View>
-          </View>
 
-          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-            {/* Hero kart */}
-            <BlurView intensity={60} tint="dark" style={styles.heroCard}>
-              <ImageBackground
-                source={{ uri: bgImage }}
-                style={styles.heroBg}
-                imageStyle={{ opacity: 0.55 }}
-              >
-                <View style={styles.heroInner}>
-                  <WeatherIcon description={weatherDetails?.description} />
-                  <Text style={styles.tempText}>
-                    {weatherDetails ? weatherDetails.temp.replace('°C', '') : '--'}°
-                  </Text>
-                  {weatherDetails?.feels_like && (
-                    <View style={styles.feelsRow}>
-                      <Thermometer size={13} color="rgba(255,255,255,0.6)" />
-                      <Text style={styles.feelsText}>
-                        Hissedilen {weatherDetails.feels_like}
+              {/* Hero kart */}
+              <BlurView intensity={60} tint="dark" style={styles.heroCard}>
+                <ImageBackground
+                  source={{ uri: bgImage }}
+                  style={styles.heroBg}
+                  imageStyle={{ opacity: 0.55 }}
+                >
+                  <View style={styles.heroInner}>
+                    <WeatherIcon description={weatherDetails?.description} />
+                    <Text style={styles.tempText}>
+                      {weatherDetails ? weatherDetails.temp.replace('°C', '') : '--'}°
+                    </Text>
+                    {weatherDetails?.feels_like && (
+                      <View style={styles.feelsRow}>
+                        <Thermometer size={13} color="rgba(255,255,255,0.6)" />
+                        <Text style={styles.feelsText}>
+                          Hissedilen {weatherDetails.feels_like}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.descText}>
+                      {weatherDetails?.description?.toUpperCase() || 'BİLGİ YOK'}
+                    </Text>
+                  </View>
+                </ImageBackground>
+              </BlurView>
+
+              {/* Metrik kutuları */}
+              <View style={styles.metrics}>
+                <BlurView intensity={30} tint="dark" style={styles.metricBox}>
+                  <Droplets size={20} color={theme.label} />
+                  <Text style={styles.metricLabel}>Nem</Text>
+                  <Text style={styles.metricValue}>{weatherDetails?.humidity || '--'}</Text>
+                </BlurView>
+                <BlurView intensity={30} tint="dark" style={styles.metricBox}>
+                  <Wind size={20} color={theme.label} />
+                  <Text style={styles.metricLabel}>Rüzgar</Text>
+                  <Text style={styles.metricValue}>{weatherDetails?.wind || '--'}</Text>
+                </BlurView>
+                <BlurView intensity={30} tint="dark" style={styles.metricBox}>
+                  <Gauge size={20} color={theme.label} />
+                  <Text style={styles.metricLabel}>Basınç</Text>
+                  <Text style={styles.metricValue}>{weatherDetails?.pressure || '--'}</Text>
+                </BlurView>
+              </View>
+
+              {/* Yeni Estetik AI Konuşma Balonu */}
+              <View style={styles.adviceContainer}>
+                <BlurView intensity={45} tint="dark" style={[styles.adviceCard, { borderColor: 'rgba(255,255,255,0.1)' }]}>
+                  <View style={styles.adviceHeader}>
+                    <View style={styles.adviceHeaderLeft}>
+                      {/* Bot Avatarı */}
+                      <View style={[styles.aiAvatar, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+                        <BotMessageSquare size={16} color={theme.label} />
+                      </View>
+                      <Text style={styles.adviceLabel}>SkyCast AI</Text>
+                    </View>
+                    <View style={[styles.badge, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+                      <AdviceIcon size={12} color={theme.label} />
+                      <Text style={[styles.badgeText, { color: theme.label }]}>
+                        {theme.badge}
                       </Text>
                     </View>
+                  </View>
+
+                  {loading ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
+                      <ActivityIndicator size="small" color={theme.label} />
+                      <Text style={[styles.adviceText, { color: theme.label, fontSize: 13, fontStyle: 'italic' }]}>
+                        SkyCast sinyalleri analiz ediyor...
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.adviceText}>
+                      {assistantMessage}
+                    </Text>
                   )}
-                  <Text style={styles.descText}>
-                    {weatherDetails?.description?.toUpperCase() || 'BİLGİ YOK'}
-                  </Text>
-                </View>
-              </ImageBackground>
-            </BlurView>
+                </BlurView>
+              </View>
 
-            {/* Metrik kutuları */}
-            <View style={styles.metrics}>
-              <BlurView intensity={30} tint="dark" style={styles.metricBox}>
-                <Droplets size={20} color={theme.label} />
-                <Text style={styles.metricLabel}>Nem</Text>
-                <Text style={styles.metricValue}>{weatherDetails?.humidity || '--'}</Text>
-              </BlurView>
-              <BlurView intensity={30} tint="dark" style={styles.metricBox}>
-                <Wind size={20} color={theme.label} />
-                <Text style={styles.metricLabel}>Rüzgar</Text>
-                <Text style={styles.metricValue}>{weatherDetails?.wind || '--'}</Text>
-              </BlurView>
-              <BlurView intensity={30} tint="dark" style={styles.metricBox}>
-                <Gauge size={20} color={theme.label} />
-                <Text style={styles.metricLabel}>Basınç</Text>
-                <Text style={styles.metricValue}>{weatherDetails?.pressure || '--'}</Text>
-              </BlurView>
+            </ScrollView>
+
+            {/* Provider seçici popover */}
+            {showProviders && (
+              <View style={styles.popover}>
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 6 }}>
+                  {PROVIDERS.map(p => {
+                    const active = provider === p.id;
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        onPress={() => { setProvider(p.id); setShowProviders(false); }}
+                        style={[styles.popoverItem, active && styles.popoverItemActive]}
+                      >
+                        <Text style={[styles.popoverText, active && styles.popoverTextActive]}>
+                          {p.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Input alanı */}
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.inputField}
+                placeholder={displayLocation ? `${capitalize(displayLocation)} için hava durumu...` : 'Şehir girin...'}
+                placeholderTextColor="#777"
+                value={input}
+                onChangeText={setInput}
+                onSubmitEditing={handleSend}
+                returnKeyType="send"
+              />
+              <View style={styles.toolbar}>
+                <TouchableOpacity style={styles.providerBtn} onPress={() => setShowProviders(!showProviders)}>
+                  <ChevronUp size={14} color="#666" />
+                  <Text style={styles.providerBtnText}>{selectedName}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.sendBtn} onPress={handleSend} disabled={loading}>
+                  {loading
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <ArrowRight size={18} color="#fff" />}
+                </TouchableOpacity>
+              </View>
             </View>
 
-            {/* Yeni Estetik AI Konuşma Balonu */}
-            <View style={styles.adviceContainer}>
-              <BlurView intensity={45} tint="dark" style={[styles.adviceCard, { borderColor: 'rgba(255,255,255,0.1)' }]}>
-                <View style={styles.adviceHeader}>
-                  <View style={styles.adviceHeaderLeft}>
-                    {/* Bot Avatarı */}
-                    <View style={[styles.aiAvatar, { backgroundColor: theme.bg, borderColor: theme.border }]}>
-                      <BotMessageSquare size={16} color={theme.label} />
-                    </View>
-                    <Text style={styles.adviceLabel}>SkyCast AI</Text>
-                  </View>
-                  <View style={[styles.badge, { backgroundColor: theme.bg, borderColor: theme.border }]}>
-                    <AdviceIcon size={12} color={theme.label} />
-                    <Text style={[styles.badgeText, { color: theme.label }]}>
-                      {theme.badge}
-                    </Text>
-                  </View>
-                </View>
-                
-                {loading ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
-                    <ActivityIndicator size="small" color={theme.label} />
-                    <Text style={[styles.adviceText, { color: theme.label, fontSize: 13, fontStyle: 'italic' }]}>
-                      SkyCast sinyalleri analiz ediyor...
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={styles.adviceText}>
-                    {assistantMessage}
-                  </Text>
-                )}
-              </BlurView>
-            </View>
+          </KeyboardAvoidingView>
+        </ImageBackground>
+      </SafeAreaView>
 
-          </ScrollView>
-
-          {/* Provider seçici popover */}
-          {showProviders && (
-            <View style={styles.popover}>
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 6 }}>
-                {PROVIDERS.map(p => {
-                  const active = provider === p.id;
-                  return (
-                    <TouchableOpacity
-                      key={p.id}
-                      onPress={() => { setProvider(p.id); setShowProviders(false); }}
-                      style={[styles.popoverItem, active && styles.popoverItemActive]}
-                    >
-                      <Text style={[styles.popoverText, active && styles.popoverTextActive]}>
-                        {p.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          )}
-
-          {/* Input alanı */}
-          <View style={styles.inputWrapper}>
-            <TextInput
-              style={styles.inputField}
-              placeholder={displayLocation ? `${capitalize(displayLocation)} için hava durumu...` : 'Şehir girin...'}
-              placeholderTextColor="#777"
-              value={input}
-              onChangeText={setInput}
-              onSubmitEditing={handleSend}
-              returnKeyType="send"
-            />
-            <View style={styles.toolbar}>
-              <TouchableOpacity style={styles.providerBtn} onPress={() => setShowProviders(!showProviders)}>
-                <ChevronUp size={14} color="#666" />
-                <Text style={styles.providerBtnText}>{selectedName}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.sendBtn} onPress={handleSend} disabled={loading}>
-                {loading
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <ArrowRight size={18} color="#fff" />}
-              </TouchableOpacity>
-            </View>
+      {/* ── Splash Ekranı (Tam olarak telefon simülatörünün alanında açılır) ─────────────── */}
+      {!splashDone && (
+        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', zIndex: 9991 }]} pointerEvents="box-none">
+          <View style={[styles.content, { padding: 0 }]} pointerEvents="auto">
+            <AppSplash onFinish={() => setSplashDone(true)} />
           </View>
-
-        </KeyboardAvoidingView>
-      </ImageBackground>
-    </SafeAreaView>
-
-    {/* ── Splash Ekranı (Tam olarak telefon simülatörünün alanında açılır) ─────────────── */}
-    {!splashDone && (
-      <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', zIndex: 9991 }]} pointerEvents="box-none">
-        <View style={[styles.content, { padding: 0 }]} pointerEvents="auto">
-          <AppSplash onFinish={() => setSplashDone(true)} />
         </View>
-      </View>
-    )}
-  </View>
+      )}
+    </View>
   );
 }
 
@@ -366,15 +368,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: {
-    width:     Platform.OS === 'web' ? 390 : '100%',
-    height:    Platform.OS === 'web' ? '88%' : '100%',
+    width: Platform.OS === 'web' ? 390 : '100%',
+    height: Platform.OS === 'web' ? '88%' : '100%',
     maxHeight: Platform.OS === 'web' ? 820 : '100%',
-    maxWidth:  Platform.OS === 'web' ? 390 : width,
+    maxWidth: Platform.OS === 'web' ? 390 : width,
     padding: 16,
     backgroundColor: 'rgba(0,0,0,0.52)',
-    borderRadius:  Platform.OS === 'web' ? 40 : 0,
-    borderWidth:   Platform.OS === 'web' ? 1 : 0,
-    borderColor:   'rgba(255,255,255,0.18)',
+    borderRadius: Platform.OS === 'web' ? 40 : 0,
+    borderWidth: Platform.OS === 'web' ? 1 : 0,
+    borderColor: 'rgba(255,255,255,0.18)',
     overflow: 'hidden',
   },
   header: { alignItems: 'center', marginTop: 18, marginBottom: 8 },
@@ -464,7 +466,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', paddingTop: 4,
   },
   providerBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 6 },
-  providerBtnText: { color: '#666', fontSize: 12, fontWeight: '600' },
+  providerBtnText: { color: '#aaa', fontSize: 12, fontWeight: '600' },
   sendBtn: {
     backgroundColor: '#2a2a2a', width: 36, height: 36,
     borderRadius: 18, alignItems: 'center', justifyContent: 'center',

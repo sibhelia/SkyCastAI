@@ -9,6 +9,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 import requests
 import json
+from langchain_openai import ChatOpenAI
 
 load_dotenv()
 
@@ -96,44 +97,44 @@ summary için ZORUNLU kurallar:
 """
 
 # --- 3. Dynamic LLM Factory ---
-def get_llm(provider: str):
-    if provider == "gemini-2.5-flash":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.5)
+def get_llm(provider: str, model_name_override: str = None):
+    """
+    Belirlenen provider ve modele göre LangChain LLM nesnesi döner.
+    model_name_override verilirse direkt o model yüklenir.
+    """
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_ollama import ChatOllama
+    from langchain_groq import ChatGroq
+    from langchain_openai import ChatOpenAI
 
-    elif provider == "gemini-2.5-pro":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0.5)
-
-    elif provider == "gemini-2.0-flash":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.5)
-
-    elif provider == "gemini-2.0-flash-lite":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0.5)
-
-    elif provider == "gemini":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return [
-            ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0.5),
-            ChatGoogleGenerativeAI(model="gemini-2.5-flash",       temperature=0.5),
-            ChatGoogleGenerativeAI(model="gemini-2.5-pro",         temperature=0.5),
-        ]
-
-    elif provider.startswith("ollama-"):
-        from langchain_ollama import ChatOllama
-        model_name = provider.replace("ollama-", "")
-        return ChatOllama(model=model_name, temperature=0.5)
-
-    elif provider == "groq-llama3":
-        from langchain_groq import ChatGroq
+    # Groq (Llama 3) - Ana Sağlayıcı
+    if provider == "groq-llama3":
+        # Fallback listesi: Biri hata verirse diğeri denenecek
         return [
             ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.5),
             ChatGroq(model_name="llama-3.1-8b-instant",    temperature=0.5),
         ]
+    elif provider.startswith("ollama-"):
+        m_name = model_name_override or provider.replace("ollama-", "")
+        return ChatOllama(model=m_name, temperature=0.5)
 
-    return None
+    # OpenRouter
+    elif provider.startswith("openrouter/") or model_name_override:
+        m_name = model_name_override or provider.replace("openrouter/", "")
+        return ChatOpenAI(
+            model=m_name,
+            openai_api_key=os.getenv("OPENROUTER_API_KEY"),
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://localhost:3000",
+                "X-Title": "SkyCast Weather AI",
+            },
+            temperature=0.5
+        )
+
+    # Default fallback to Groq
+    return ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.5)
+
 
 
 def _invoke_llm(llm, messages):
@@ -143,89 +144,66 @@ def _invoke_llm(llm, messages):
 
 
 def agent_node(state: State):
-    provider = state.get("provider", "gemini-2.0-flash-lite")
-    messages  = state["messages"]
+    provider = state.get("provider", "groq-llama3")
+    messages = state["messages"]
 
     has_tool_results = any(m.type == "tool" for m in messages)
-
-    if not has_tool_results:
-        # İlk tur: sadece aracı tetikle
-        sys_msg = SystemMessage(
-            content=(
-                "Sen bir hava durumu asistanısın. "
-                "Kullanıcının belirttiği şehrin hava durumunu get_weather aracıyla getir. "
-                "Hiçbir şey söyleme, sadece aracı çağır."
-            )
-        )
-    else:
-        # Araç verisi geldi: akıllı tavsiye modu
-        sys_msg = SystemMessage(content=ADVICE_SYSTEM_PROMPT)
+    sys_msg = SystemMessage(content=ADVICE_SYSTEM_PROMPT if has_tool_results else (
+        "Sen bir hava durumu asistanısın. Kullanıcının belirttiği şehrin hava durumunu get_weather aracıyla getir. "
+        "Hiçbir şey söyleme, sadece aracı çağır."
+    ))
 
     all_messages = [sys_msg] + messages
+    llm_or_list = get_llm(provider)
+    
+    # Liste ise (Groq vb.) fallback mantığı uygula
+    llm_list = llm_or_list if isinstance(llm_or_list, list) else [llm_or_list]
+    
+    # OpenRouter için aday modelleri genişletelim (Kullanıcı istedi)
+    if provider.startswith("openrouter/"):
+        requested_model = provider.replace("openrouter/", "")
+        
+        # Güncel 2026 Mart ayı itibariyle aktif "Free" model ID'leri
+        # Hatalı olan (400/404 dönen) ID'leri doğruladıklarımla değiştirdim.
+        candidates = [
+            requested_model,
+            "nvidia/nemotron-3-super-120b-a12b:free",
+            "openrouter/auto"
+        ]
+        # Tekrar edenleri ayıkla ve listeye ekle
+        llm_list = []
+        seen = set()
+        for m in candidates:
+            if m not in seen:
+                llm_list.append(get_llm("openrouter/", model_name_override=m))
+                seen.add(m)
 
-    # ---- Gemini ----
-    if "gemini" in provider:
-        current_llm = get_llm(provider)
-        llm_list    = current_llm if isinstance(current_llm, list) else [current_llm]
-
-        if not isinstance(current_llm, list):
-            llm_list = llm_list + [
-                get_llm("gemini-2.0-flash-lite"),
-                get_llm("gemini-2.5-flash"),
-            ]
-
-        last_err = None
-        for llm in llm_list:
-            if not llm:
-                continue
-            try:
-                msg = _invoke_llm(llm, all_messages)
-                print(f"[Graph] Gemini ({llm.model}) OK")
-                return {"messages": [msg]}
-            except Exception as e:
-                if any(x in str(e).lower() for x in ["quota", "429", "resource_exhausted"]):
-                    print(f"[Graph] {llm.model} kota doldu, yedek deneniyor...")
-                    last_err = e
-                    continue
-                return {"messages": [HumanMessage(content=f"Gemini Hatası: {e}")]}
-
-        return {"messages": [HumanMessage(
-            content=f"Tüm Gemini modellerinin kotası doldu. Groq veya Ollama kullanın. ({last_err})"
-        )]}
-
-    # ---- Ollama ----
-    elif provider.startswith("ollama-"):
-        llm = get_llm(provider)
+    last_error = None
+    for llm in llm_list:
+        if not llm: continue
         try:
+            # Model ismini logla (ChatOpenAI için model, ChatGroq için model_name vb.)
+            m_id = getattr(llm, 'model', getattr(llm, 'model_name', 'Unknown'))
+            print(f"[Graph] Deneniyor: {m_id}")
+            
             msg = _invoke_llm(llm, all_messages)
+            print(f"[Graph] {m_id} OK")
             return {"messages": [msg]}
         except Exception as e:
-            return {"messages": [HumanMessage(
-                content=f"Ollama '{provider}' bağlantı hatası. Model açık mı? ({e})"
-            )]}
-
-    # ---- Groq ----
-    elif provider == "groq-llama3":
-        llms     = get_llm(provider)
-        last_err = None
-        for llm in llms:
-            try:
-                msg = _invoke_llm(llm, all_messages)
-                print(f"[Graph] Groq ({llm.model_name}) OK")
-                return {"messages": [msg]}
-            except Exception as e:
-                print(f"[Graph] Groq ({llm.model_name}) hata: {e}")
-                last_err = e
+            print(f"[Graph] Hata ({provider}): {e}")
+            last_error = e
+            # Eğer OpenRouter ise veya liste ise devam et, değilse direkt hata dön
+            if len(llm_list) > 1:
                 continue
-        return {"messages": [HumanMessage(
-            content=f"Groq API hatası (kota?): {last_err}"
-        )]}
+            break
 
-    return {"messages": [HumanMessage(content="Bu model henüz hazır değil.")]}
+    return {"messages": [HumanMessage(
+        content=f"Üzgünüm, şu an seçili model ({provider}) yanıt vermiyor. Lütfen başka bir model deneyin. (Hata: {last_error})"
+    )]}
 
 
 # --- 5. Graph Definition ---
-def create_graph(provider: str = "gemini"):
+def create_graph(provider: str = "groq-llama3"):
     workflow = StateGraph(State)
 
     workflow.add_node("agent", agent_node)

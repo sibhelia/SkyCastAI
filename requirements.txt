@@ -4,6 +4,8 @@ langchain
 langchain-google-genai
 langchain-groq
 langgraph
+langchain-openai
 python-dotenv
 requests
 asyncio
+langchain-ollama
