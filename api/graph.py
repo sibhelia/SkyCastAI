@@ -57,13 +57,13 @@ def get_llm(provider: str):
     Seçilen provider'a göre LLM objesini döner.
     Bazı provider'lar (Gemini gibi) kota hataları için bir liste (fallback) dönebilir.
     """
-    if provider == "gemini-1.5-flash":
+    if provider == "gemini-2.5-flash":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
+        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
     
-    elif provider == "gemini-1.5-pro":
+    elif provider == "gemini-2.5-pro":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.7)
+        return ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0.7)
     
     elif provider == "gemini-2.0-flash":
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -78,8 +78,8 @@ def get_llm(provider: str):
         from langchain_google_genai import ChatGoogleGenerativeAI
         return [
             ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0.7),
-            ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.7),
-            ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7),
+            ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7),
+            ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0.7),
         ]
     
     elif provider.startswith("ollama-"):
@@ -103,7 +103,7 @@ def agent_node(state: State):
     """
     Modeli çağırıp yanıtı state'e ekleyen ana düğüm.
     """
-    provider = state.get("provider", "gemini-1.5-flash")
+    provider = state.get("provider", "gemini-2.0-flash-lite")
     messages = state["messages"]
     
     # Sistem talimatı
@@ -119,28 +119,36 @@ def agent_node(state: State):
         # Tekli model mi yoksa otomatik fallback mi?
         current_llm = get_llm(provider)
         
-        # Eğer get_llm liste (Fallback) dönerse
-        if isinstance(current_llm, list):
-            last_err = None
-            for llm in current_llm:
-                try:
-                    llm_with_tools = llm.bind_tools(tools)
-                    msg = llm_with_tools.invoke(all_messages)
-                    print(f"[Graph Log] {llm.model} başarıyla yanıt verdi.")
-                    return {"messages": [msg]}
-                except Exception as e:
-                    print(f"[Graph Log] {llm.model} hata: {e}")
-                    last_err = e
-                    continue
-            return {"messages": [HumanMessage(content=f"Gemini Hatası: {str(last_err)}")]}
-        # Tekli model ise (örn: gemini-1.5-pro)
-        else:
+        # Tekli model veya Fallback listesi fark etmeksizin deneme yapalım
+        llm_list = current_llm if isinstance(current_llm, list) else [current_llm]
+        
+        # Eğer tekli model seçilmiş ama kota dolmuşsa, diğer modelleri de ekle (Yedek silsilesi)
+        if not isinstance(current_llm, list):
+             # Alternatif Gemini modelleri (Eğer seçilen model hata verirse diye)
+             llm_list = llm_list + [
+                 get_llm("gemini-2.0-flash-lite"),
+                 get_llm("gemini-2.5-flash"),
+                 get_llm("gemini-1.5-flash-latest") # Eski ama bazen kotası daha boş olan model
+             ]
+
+        last_err = None
+        for llm in llm_list:
+            if not llm: continue
             try:
-                llm_with_tools = current_llm.bind_tools(tools)
+                llm_with_tools = llm.bind_tools(tools)
                 msg = llm_with_tools.invoke(all_messages)
+                print(f"[Graph Log] Gemini ({llm.model}) başarıyla yanıt verdi.")
                 return {"messages": [msg]}
             except Exception as e:
+                err_str = str(e).lower()
+                if any(x in err_str for x in ["quota", "429", "resource_exhausted"]):
+                    print(f"[Graph Log] {llm.model} kotası dolmuş, bir sonraki yedek deneniyor...")
+                    last_err = e
+                    continue
+                # Eğer kota dışı başka bir hataysa direkt dön
                 return {"messages": [HumanMessage(content=f"Gemini API Hatası: {str(e)}")]}
+        
+        return {"messages": [HumanMessage(content=f"Bütün Gemini modellerinin kotası dolmuş! Lütfen Groq veya Ollama kullanın. (Hata: {str(last_err)})")]}
 
     # 2. Ollama İşleme
     elif provider.startswith("ollama-"):

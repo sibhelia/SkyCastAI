@@ -36,15 +36,10 @@ const { width } = Dimensions.get('window');
 const BACKEND_URL = Platform.OS === 'web' ? 'http://localhost:8000' : 'http://192.168.4.209:8000';
 
 const providersList = [
-  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
-  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (Zeki)' },
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash (Hızlı)' },
-  { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite' },
+  { id: 'groq-llama3', name: 'Groq Llama 3' },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
   { id: 'ollama-llama3.2', name: 'Ollama Llama 3.2' },
-  { id: 'ollama-llama3', name: 'Ollama Llama 3' },
-  { id: 'ollama-qwen2.5:0.5b', name: 'Ollama Qwen 2.5' },
-  { id: 'ollama-deepseek-r1:1.5b', name: 'Ollama DeepSeek R1' },
-  { id: 'groq-llama3', name: 'Groq Llama 3 (Free)' }
+  { id: 'ollama-deepseek-r1:1.5b', name: 'Ollama DeepSeek' }
 ];
 
 const getWeatherIcon = (description) => {
@@ -263,17 +258,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: {
-    width: Platform.OS === 'web' ? 420 : '100%', // Web'de telefon boyutunda kalsın
-    height: Platform.OS === 'web' ? 850 : '100%',
-    maxWidth: width,
-    padding: 20,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    width: Platform.OS === 'web' ? 390 : '100%', 
+    height: Platform.OS === 'web' ? '88%' : '100%',
+    maxHeight: Platform.OS === 'web' ? 820 : '100%',
+    maxWidth: Platform.OS === 'web' ? 390 : width,
+    padding: 16,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     borderRadius: Platform.OS === 'web' ? 40 : 0,
     borderWidth: Platform.OS === 'web' ? 1 : 0,
     borderColor: 'rgba(255,255,255,0.2)',
     overflow: 'hidden',
-    marginTop: Platform.OS === 'web' ? 20 : 0,
-    marginBottom: Platform.OS === 'web' ? 20 : 0,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.5,
+    shadowRadius: 30,
+    elevation: 10,
   },
   header: {
     alignItems: 'center',
