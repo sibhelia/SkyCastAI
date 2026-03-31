@@ -33,18 +33,18 @@ const { width } = Dimensions.get('window');
 
 // Backend IP (Tebrikler! ipconfig ile bulmuştuk)
 // Backend IP ve Localhost Ayarı (Hem Web hem Telefon için)
-const BACKEND_URL = Platform.OS === 'web' ? 'http://localhost:8000' : 'http://192.168.5.21:8000';
+const BACKEND_URL = Platform.OS === 'web' ? 'http://localhost:8000' : 'http://192.168.4.209:8000';
 
 const providersList = [
-  { id: 'gemini-lite', name: 'Gemini 2.0 Flash Lite' },
-  { id: 'gemini', name: 'Gemini 1.5 Flash' },
-  { id: 'anthropic-claude3', name: 'Claude 3 Haiku' },
-  { id: 'openai-gpt4o-mini', name: 'GPT-4o Mini' },
-  { id: 'groq-llama3', name: 'Llama 3 (Groq)' },
-  { id: 'groq-mixtral', name: 'Mixtral 8x7b' },
+  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
+  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (Zeki)' },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash (Hızlı)' },
+  { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite' },
   { id: 'ollama-llama3.2', name: 'Ollama Llama 3.2' },
-  { id: 'ollama-mistral', name: 'Ollama Mistral' },
-  { id: 'ollama-phi3', name: 'Ollama Phi-3' }
+  { id: 'ollama-llama3', name: 'Ollama Llama 3' },
+  { id: 'ollama-qwen2.5:0.5b', name: 'Ollama Qwen 2.5' },
+  { id: 'ollama-deepseek-r1:1.5b', name: 'Ollama DeepSeek R1' },
+  { id: 'groq-llama3', name: 'Groq Llama 3 (Free)' }
 ];
 
 const getWeatherIcon = (description) => {
@@ -453,9 +453,9 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   popoverItemActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(0, 122, 204, 0.2)', // Daha belirgin mavi arka plan
     borderWidth: 1,
-    borderColor: '#007ACC', // VS Code mavi seçim sınırı (görseldeki gibi)
+    borderColor: '#38bdf8', // Daha parlak mavi sınır
   },
   popoverItemRow: {
     flexDirection: 'row',
@@ -469,7 +469,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   activeText: {
-    color: '#ffffff', // Seçiliyken daha beyaz
+    color: '#38bdf8', // Seçiliyken yazı da mavi olsun
+    fontWeight: '800',
   },
   badgePill: {
     backgroundColor: 'rgba(255,255,255,0.1)',

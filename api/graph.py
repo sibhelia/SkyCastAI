@@ -57,27 +57,56 @@ def get_llm(provider: str):
     Seçilen provider'a göre LLM objesini döner.
     Bazı provider'lar (Gemini gibi) kota hataları için bir liste (fallback) dönebilir.
     """
-    if provider == "gemini":
+    if provider == "gemini-1.5-flash":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        # Gemini 2.0 Flash Lite -> Gemini 1.5 FlashFallback silsilesi
+        return ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
+    
+    elif provider == "gemini-1.5-pro":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.7)
+    
+    elif provider == "gemini-2.0-flash":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.7)
+    
+    elif provider == "gemini-2.0-flash-lite":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0.7)
+
+    # Otomatik Fallback Mantığı (Eski 'gemini' id'si için)
+    elif provider == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
         return [
             ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0.7),
+            ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.7),
             ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7),
-            ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0.7),
         ]
     
-    # Şimdilik Gemini ile başladık, diğerleri boş
+    elif provider.startswith("ollama-"):
+        from langchain_ollama import ChatOllama
+        # 'ollama-llama3.2' -> 'llama3.2'
+        model_name = provider.replace("ollama-", "")
+        return ChatOllama(model=model_name, temperature=0.7)
+    
+    elif provider == "groq-llama3":
+        from langchain_groq import ChatGroq
+        # Groq'un en yeni modelleri (Eski Llama 3 modelleri emekli edildi)
+        return [
+            ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.7),
+            ChatGroq(model_name="llama-3.1-8b-instant", temperature=0.7),
+        ]
+    
+    # SADECE ÜCRETSİZ/YEREL MODELLER AKTİF
     return None
 
-# --- 4. Node Logic ---
 def agent_node(state: State):
     """
     Modeli çağırıp yanıtı state'e ekleyen ana düğüm.
     """
-    provider = state.get("provider", "gemini")
+    provider = state.get("provider", "gemini-1.5-flash")
     messages = state["messages"]
     
-    # Sistem talimatı (Kısa cevap kuralı burada sabit)
+    # Sistem talimatı
     sys_msg = SystemMessage(content="""Sen gelişmiş bir mobil hava durumu uygulamasının asistanısın. 
     1. Cevabın ÇOK KISA (maks 2-3 cümle) olmalı.
     2. Mutlaka 1 pratik tavsiye ver.
@@ -85,29 +114,62 @@ def agent_node(state: State):
     
     all_messages = [sys_msg] + messages
     
-    # 1. Gemini İşleme (Fallback Mantığı ile)
-    if provider == "gemini":
-        llms = get_llm("gemini")
-        last_error = None
+    # 1. Gemini İşleme (Özel Fallback ile)
+    if "gemini" in provider:
+        # Tekli model mi yoksa otomatik fallback mi?
+        current_llm = get_llm(provider)
+        
+        # Eğer get_llm liste (Fallback) dönerse
+        if isinstance(current_llm, list):
+            last_err = None
+            for llm in current_llm:
+                try:
+                    llm_with_tools = llm.bind_tools(tools)
+                    msg = llm_with_tools.invoke(all_messages)
+                    print(f"[Graph Log] {llm.model} başarıyla yanıt verdi.")
+                    return {"messages": [msg]}
+                except Exception as e:
+                    print(f"[Graph Log] {llm.model} hata: {e}")
+                    last_err = e
+                    continue
+            return {"messages": [HumanMessage(content=f"Gemini Hatası: {str(last_err)}")]}
+        # Tekli model ise (örn: gemini-1.5-pro)
+        else:
+            try:
+                llm_with_tools = current_llm.bind_tools(tools)
+                msg = llm_with_tools.invoke(all_messages)
+                return {"messages": [msg]}
+            except Exception as e:
+                return {"messages": [HumanMessage(content=f"Gemini API Hatası: {str(e)}")]}
+
+    # 2. Ollama İşleme
+    elif provider.startswith("ollama-"):
+        llm = get_llm(provider)
+        try:
+            llm_with_tools = llm.bind_tools(tools)
+            msg = llm_with_tools.invoke(all_messages)
+            return {"messages": [msg]}
+        except Exception as e:
+            print(f"[Graph Log] Ollama hatası: {e}")
+            return {"messages": [HumanMessage(content=f"Ollama '{provider}' bağlantı hatası. Modelin açık olduğundan emin olun.")]}
+
+    # 3. Groq İşleme (Ücretsiz)
+    elif provider == "groq-llama3":
+        llms = get_llm(provider)
+        last_err = None
         for llm in llms:
             try:
                 llm_with_tools = llm.bind_tools(tools)
                 msg = llm_with_tools.invoke(all_messages)
-                print(f"[Graph Log] {llm.model} başarıyla yanıt verdi.")
+                print(f"[Graph Log] Groq ({llm.model_name}) başarıyla yanıt verdi.")
                 return {"messages": [msg]}
             except Exception as e:
-                err_str = str(e).lower()
-                if any(x in err_str for x in ["quota", "429", "resource_exhausted"]):
-                    print(f"[Graph Log] {llm.model} kota doldu, sonraki deneniyor...")
-                    last_error = e
-                    continue
-                raise e
-        raise last_error
+                print(f"[Graph Log] Groq ({llm.model_name}) hata: {e}")
+                last_err = e
+                continue
+        return {"messages": [HumanMessage(content=f"Groq API Hatası (Kota dolmuş olabilir): {str(last_err)}")]}
 
-    # Diğer provider'lar henüz 'grafa dahil değil' :)
-    # Bu adımı bitirdikten sonra sıradakini buraya ekleyeceğiz.
-    print(f"[Graph Log] Hata: '{provider}' henüz yapılandırılmadı.")
-    return {"messages": [HumanMessage(content="Üzgünüm, bu model henüz hazır değil.")]}
+    return {"messages": [HumanMessage(content="Bu model henüz hazır değil.")]}
 
 # --- 5. Graph Definition ---
 def create_graph(provider: str = "gemini"):
