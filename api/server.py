@@ -7,8 +7,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from api.graph import create_graph, State
-from api.utils import get_city_image
+try:
+    from api.graph import create_graph, State
+    from api.utils import get_city_image
+except ImportError:
+    from graph import create_graph, State
+    from utils import get_city_image
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
 app = FastAPI()

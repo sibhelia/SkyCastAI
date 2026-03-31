@@ -1,10 +1,9 @@
-langgraph
-langchain-google-genai
-langchain-openai
-langchain-community
-python-dotenv
-requests
 fastapi
 uvicorn
-langchain-anthropic
+langchain
+langchain-google-genai
 langchain-groq
+langgraph
+python-dotenv
+requests
+asyncio
