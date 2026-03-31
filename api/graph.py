@@ -15,35 +15,48 @@ load_dotenv()
 # --- 1. State Definition ---
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
-    provider: str  # Hangi provider'ın kullanıldığı bilgisi
+    provider: str
 
 # --- 2. Tool Tanımı ---
 @tool
 def get_weather(location: str):
     """Belirtilen konumun anlık hava durumunu, rüzgar hızını, nem oranını ve basıncı getirir."""
     api_key = os.getenv("OPENWEATHERMAP_API_KEY")
-    
+
     if not api_key or "your_weather_key" in api_key:
         return f"{location} için hava durumu şu an 22°C, Nem: %45, Rüzgar: 10 km/sa (Simüle Edilen Veri)."
-    
+
     url = f"http://api.openweathermap.org/data/2.5/weather?q={location}&appid={api_key}&units=metric&lang=tr"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
-        temp = data['main']['temp']
-        humidity = data['main']['humidity']
-        pressure = data['main']['pressure']
-        wind_speed = round(data['wind']['speed'] * 3.6, 1) # m/s to km/h
-        desc = data['weather'][0]['description']
-        
+        temp        = data['main']['temp']
+        feels_like  = data['main']['feels_like']
+        humidity    = data['main']['humidity']
+        pressure    = data['main']['pressure']
+        wind_speed  = round(data['wind']['speed'] * 3.6, 1)
+        desc        = data['weather'][0]['description']
+        visibility  = data.get('visibility', None)
+        rain_1h     = data.get('rain', {}).get('1h', 0)
+
         result = {
-            "location": location,
-            "temp": f"{temp}°C",
-            "humidity": f"%{humidity}",
-            "pressure": f"{pressure} hPa",
-            "wind": f"{wind_speed} km/sa",
+            "location":    location,
+            "temp":        f"{temp}°C",
+            "feels_like":  f"{feels_like}°C",
+            "humidity":    f"%{humidity}",
+            "pressure":    f"{pressure} hPa",
+            "wind":        f"{wind_speed} km/sa",
             "description": desc,
-            "raw_text": f"{location} konumunda hava {temp}°C ve {desc}. Nem: %{humidity}, Rüzgar: {wind_speed} km/sa."
+            "rain_1h":     rain_1h,
+            "visibility":  visibility,
+            "raw_text": (
+                f"{location}: {temp}°C ({desc}). "
+                f"Hissedilen: {feels_like}°C. "
+                f"Nem: %{humidity}. "
+                f"Rüzgar: {wind_speed} km/sa. "
+                f"Basınç: {pressure} hPa."
+                + (f" Son 1 saatte {rain_1h}mm yağış." if rain_1h else "")
+            )
         }
         return json.dumps(result, ensure_ascii=False)
     else:
@@ -51,145 +64,175 @@ def get_weather(location: str):
 
 tools = [get_weather]
 
+# --- Hava durumuna göre akıllı tavsiye sistemi ---
+ADVICE_SYSTEM_PROMPT = """Sen hava durumu konusunda uzmanlaşmış, samimi ve pratik bir asistansın.
+
+Gelen hava verilerini analiz edip şu formatta **kesinlikle JSON** yanıt ver, başka hiçbir şey yazma:
+
+{
+  "summary": "2-3 cümlelik özet + pratik tavsiye",
+  "advice_type": "danger|warning|neutral|good",
+  "icon_query": "Şehrin en ikonik mekanı (ör: Galata Kulesi)"
+}
+
+advice_type seçim kuralları:
+- "danger"  → Don riski (≤2°C), aşırı sıcak (≥38°C), fırtına, çok yüksek rüzgar (≥60 km/sa), yoğun yağış
+- "warning" → Yağışlı hava, serin/soğuk (3-10°C), sıcak ama bunaltıcı (33-37°C), kuvvetli rüzgar (40-59 km/sa)
+- "neutral"  → Bulutlu, hafif rüzgarlı, orta sıcaklık (11-20°C)
+- "good"     → Güneşli, 20-30°C arası, düşük nem, sakin rüzgar
+
+summary için ZORUNLU kurallar:
+1. İlk cümle: Koşulların canlı, etkileyici yorumu (sadece rakam okuma, değerlendirme yap)
+2. İkinci cümle: Somut eylem tavsiyesi (örn: "Şemsiyeni çantana at.", "Hafif bir ceket yeterli.", "Bugün piknik için biçilmiş kaftan!", "Evden çıkma zorunlu değilse çıkma.")
+3. Hissedilen sıcaklık gerçekten farklıysa (±4°C) mutlaka belirt
+4. Yüksek nem (>%75) boğuculuk, düşük nem (<30%) kuruluk olarak yorum yap
+5. Kesinlikle "Merhaba" veya selamlama ile başlama, direkt konuya gir
+
+Örnekler:
+- 5°C, yağmurlu → "Islak ve üşütücü bir gün sizi bekliyor. Uzun mont, su geçirmez ayakkabı şart; şemsiye çantanızda olsun."
+- 28°C, güneşli, nem %40 → "Harika bir gün! Güneş kremi sürmeyi ve bol su içmeyi unutmayın."
+- 35°C, nem %80 → "Bunaltıcı, nemli bir sıcaklık var — hissedilen çok daha fazla. Öğlen saatlerinde dışarı çıkmaktan kaçının, yanınızda mutlaka su taşıyın."
+- -3°C, karlı → "Don tehlikesi! Yollarda buzlanma riski var. Şişme mont, eldiven ve kaymayan taban zorunlu."
+"""
+
 # --- 3. Dynamic LLM Factory ---
 def get_llm(provider: str):
-    """
-    Seçilen provider'a göre LLM objesini döner.
-    Bazı provider'lar (Gemini gibi) kota hataları için bir liste (fallback) dönebilir.
-    """
     if provider == "gemini-2.5-flash":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
-    
+        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.5)
+
     elif provider == "gemini-2.5-pro":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0.7)
-    
+        return ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0.5)
+
     elif provider == "gemini-2.0-flash":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.7)
-    
+        return ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.5)
+
     elif provider == "gemini-2.0-flash-lite":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0.7)
+        return ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0.5)
 
-    # Otomatik Fallback Mantığı (Eski 'gemini' id'si için)
     elif provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
         return [
-            ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0.7),
-            ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7),
-            ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0.7),
+            ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0.5),
+            ChatGoogleGenerativeAI(model="gemini-2.5-flash",       temperature=0.5),
+            ChatGoogleGenerativeAI(model="gemini-2.5-pro",         temperature=0.5),
         ]
-    
+
     elif provider.startswith("ollama-"):
         from langchain_ollama import ChatOllama
-        # 'ollama-llama3.2' -> 'llama3.2'
         model_name = provider.replace("ollama-", "")
-        return ChatOllama(model=model_name, temperature=0.7)
-    
+        return ChatOllama(model=model_name, temperature=0.5)
+
     elif provider == "groq-llama3":
         from langchain_groq import ChatGroq
-        # Groq'un en yeni modelleri (Eski Llama 3 modelleri emekli edildi)
         return [
-            ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.7),
-            ChatGroq(model_name="llama-3.1-8b-instant", temperature=0.7),
+            ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.5),
+            ChatGroq(model_name="llama-3.1-8b-instant",    temperature=0.5),
         ]
-    
-    # SADECE ÜCRETSİZ/YEREL MODELLER AKTİF
+
     return None
 
+
+def _invoke_llm(llm, messages):
+    """Tek bir LLM objesini araç bağlayarak çağırır."""
+    llm_with_tools = llm.bind_tools(tools)
+    return llm_with_tools.invoke(messages)
+
+
 def agent_node(state: State):
-    """
-    Modeli çağırıp yanıtı state'e ekleyen ana düğüm.
-    """
     provider = state.get("provider", "gemini-2.0-flash-lite")
-    messages = state["messages"]
-    
-    # Sistem talimatı
-    sys_msg = SystemMessage(content="""Sen gelişmiş bir mobil hava durumu uygulamasının asistanısın. 
-    1. Cevabın ÇOK KISA (maks 2-3 cümle) olmalı.
-    2. Mutlaka 1 pratik tavsiye ver.
-    3. Gereksiz kelime kullanma.""")
-    
+    messages  = state["messages"]
+
+    has_tool_results = any(m.type == "tool" for m in messages)
+
+    if not has_tool_results:
+        # İlk tur: sadece aracı tetikle
+        sys_msg = SystemMessage(
+            content=(
+                "Sen bir hava durumu asistanısın. "
+                "Kullanıcının belirttiği şehrin hava durumunu get_weather aracıyla getir. "
+                "Hiçbir şey söyleme, sadece aracı çağır."
+            )
+        )
+    else:
+        # Araç verisi geldi: akıllı tavsiye modu
+        sys_msg = SystemMessage(content=ADVICE_SYSTEM_PROMPT)
+
     all_messages = [sys_msg] + messages
-    
-    # 1. Gemini İşleme (Özel Fallback ile)
+
+    # ---- Gemini ----
     if "gemini" in provider:
-        # Tekli model mi yoksa otomatik fallback mi?
         current_llm = get_llm(provider)
-        
-        # Tekli model veya Fallback listesi fark etmeksizin deneme yapalım
-        llm_list = current_llm if isinstance(current_llm, list) else [current_llm]
-        
-        # Eğer tekli model seçilmiş ama kota dolmuşsa, diğer modelleri de ekle (Yedek silsilesi)
+        llm_list    = current_llm if isinstance(current_llm, list) else [current_llm]
+
         if not isinstance(current_llm, list):
-             # Alternatif Gemini modelleri (Eğer seçilen model hata verirse diye)
-             llm_list = llm_list + [
-                 get_llm("gemini-2.0-flash-lite"),
-                 get_llm("gemini-2.5-flash"),
-                 get_llm("gemini-1.5-flash-latest") # Eski ama bazen kotası daha boş olan model
-             ]
+            llm_list = llm_list + [
+                get_llm("gemini-2.0-flash-lite"),
+                get_llm("gemini-2.5-flash"),
+            ]
 
         last_err = None
         for llm in llm_list:
-            if not llm: continue
+            if not llm:
+                continue
             try:
-                llm_with_tools = llm.bind_tools(tools)
-                msg = llm_with_tools.invoke(all_messages)
-                print(f"[Graph Log] Gemini ({llm.model}) başarıyla yanıt verdi.")
+                msg = _invoke_llm(llm, all_messages)
+                print(f"[Graph] Gemini ({llm.model}) OK")
                 return {"messages": [msg]}
             except Exception as e:
-                err_str = str(e).lower()
-                if any(x in err_str for x in ["quota", "429", "resource_exhausted"]):
-                    print(f"[Graph Log] {llm.model} kotası dolmuş, bir sonraki yedek deneniyor...")
+                if any(x in str(e).lower() for x in ["quota", "429", "resource_exhausted"]):
+                    print(f"[Graph] {llm.model} kota doldu, yedek deneniyor...")
                     last_err = e
                     continue
-                # Eğer kota dışı başka bir hataysa direkt dön
-                return {"messages": [HumanMessage(content=f"Gemini API Hatası: {str(e)}")]}
-        
-        return {"messages": [HumanMessage(content=f"Bütün Gemini modellerinin kotası dolmuş! Lütfen Groq veya Ollama kullanın. (Hata: {str(last_err)})")]}
+                return {"messages": [HumanMessage(content=f"Gemini Hatası: {e}")]}
 
-    # 2. Ollama İşleme
+        return {"messages": [HumanMessage(
+            content=f"Tüm Gemini modellerinin kotası doldu. Groq veya Ollama kullanın. ({last_err})"
+        )]}
+
+    # ---- Ollama ----
     elif provider.startswith("ollama-"):
         llm = get_llm(provider)
         try:
-            llm_with_tools = llm.bind_tools(tools)
-            msg = llm_with_tools.invoke(all_messages)
+            msg = _invoke_llm(llm, all_messages)
             return {"messages": [msg]}
         except Exception as e:
-            print(f"[Graph Log] Ollama hatası: {e}")
-            return {"messages": [HumanMessage(content=f"Ollama '{provider}' bağlantı hatası. Modelin açık olduğundan emin olun.")]}
+            return {"messages": [HumanMessage(
+                content=f"Ollama '{provider}' bağlantı hatası. Model açık mı? ({e})"
+            )]}
 
-    # 3. Groq İşleme (Ücretsiz)
+    # ---- Groq ----
     elif provider == "groq-llama3":
-        llms = get_llm(provider)
+        llms     = get_llm(provider)
         last_err = None
         for llm in llms:
             try:
-                llm_with_tools = llm.bind_tools(tools)
-                msg = llm_with_tools.invoke(all_messages)
-                print(f"[Graph Log] Groq ({llm.model_name}) başarıyla yanıt verdi.")
+                msg = _invoke_llm(llm, all_messages)
+                print(f"[Graph] Groq ({llm.model_name}) OK")
                 return {"messages": [msg]}
             except Exception as e:
-                print(f"[Graph Log] Groq ({llm.model_name}) hata: {e}")
+                print(f"[Graph] Groq ({llm.model_name}) hata: {e}")
                 last_err = e
                 continue
-        return {"messages": [HumanMessage(content=f"Groq API Hatası (Kota dolmuş olabilir): {str(last_err)}")]}
+        return {"messages": [HumanMessage(
+            content=f"Groq API hatası (kota?): {last_err}"
+        )]}
 
     return {"messages": [HumanMessage(content="Bu model henüz hazır değil.")]}
+
 
 # --- 5. Graph Definition ---
 def create_graph(provider: str = "gemini"):
     workflow = StateGraph(State)
-    
-    # Düğümleri ekle
+
     workflow.add_node("agent", agent_node)
     workflow.add_node("tools", ToolNode(tools))
-    
-    # Akışı tanımla
+
     workflow.set_entry_point("agent")
     workflow.add_conditional_edges("agent", tools_condition)
     workflow.add_edge("tools", "agent")
-    
+
     return workflow.compile()
