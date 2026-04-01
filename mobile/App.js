@@ -24,6 +24,12 @@ const PROVIDERS = [
   { id: 'openrouter/openrouter/auto', name: 'OR AUTO ROUTER' },
   { id: 'ollama-llama3.2', name: 'OLLAMA LLAMA 3.2 (YEREL)' },
   { id: 'ollama-deepseek-r1:1.5b', name: 'OLLAMA DEEPSEEK-R1 (YEREL)' },
+  { id: 'openrouter/nvidia/nemotron-3-nano-30b-a3b:free', name: 'OR NEMOTRON 3 NANO' },
+  { id: 'openrouter/stepfun/step-3.5-flash:free', name: 'OR STEP 3.5 FLASH' },
+  { id: 'openrouter/deepseek/deepseek-v3.2', name: 'OR DEEPSEEK V3.2' },
+  { id: 'openrouter/x-ai/grok-4.1-fast', name: 'OR GROK 4.1' },
+  { id: 'openrouter/minimax/minimax-m2.5', name: 'OR MINIMAX M2.5' },
+  { id: 'openrouter/google/gemini-2.5-flash-lite', name: 'OR GEMINI 2.5 LITE' },
 ];
 
 // İlk harf büyük yap
