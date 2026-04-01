@@ -15,16 +15,16 @@
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "api/server.py"
-    },
-    {
       "src": "/chat",
       "dest": "api/server.py"
     },
     {
+      "src": "/api/(.*)",
+      "dest": "api/server.py"
+    },
+    {
       "src": "/(.*)",
-      "dest": "mobile/$1"
+      "dest": "/$1"
     }
   ]
 }
